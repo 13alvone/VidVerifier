@@ -30,75 +30,75 @@ YT_DLP_FALLBACK = [
 ]
 
 def _run_download(url: str, filename: str, attempt: int) -> bool:
-	cmd = YT_DLP_BASE.copy()
-	if attempt == 3:
-		cmd = YT_DLP_FALLBACK.copy()
+    cmd = YT_DLP_BASE.copy()
+    if attempt == 3:
+        cmd = YT_DLP_FALLBACK.copy()
 
-	cmd += ["-o", f"{filename}.mp4", url]
-	logging.info(f"[i] Attempt {attempt}: {' '.join(cmd)}")
-	try:
-		subprocess.run(cmd, check=True)
-		logging.info(f"[i] Downloaded: {filename}.mp4")
-		return True
-	except subprocess.CalledProcessError as e:
-		logging.warning(f"[!] Attempt {attempt} failed: {e}")
-		return False
+    cmd += ["-o", f"{filename}.mp4", url]
+    logging.info(f"[i] Attempt {attempt}: {' '.join(cmd)}")
+    try:
+        subprocess.run(cmd, check=True)
+        logging.info(f"[i] Downloaded: {filename}.mp4")
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.warning(f"[!] Attempt {attempt} failed: {e}")
+        return False
 
 def _attempt_with_retry(url: str, filename: str) -> bool:
-	for attempt in range(1, 4):
-		success = _run_download(url, filename, attempt)
-		if success:
-			return True
-		if attempt < 3:
-			backoff = 15 * attempt
-			logging.info(f"[!] Backing off for {backoff}s before retrying...")
-			time.sleep(backoff)
-	return False
+    for attempt in range(1, 4):
+        success = _run_download(url, filename, attempt)
+        if success:
+            return True
+        if attempt < 3:
+            backoff = 15 * attempt
+            logging.info(f"[!] Backing off for {backoff}s before retrying...")
+            time.sleep(backoff)
+    return False
 
 def download_videos(subject: str, urls: List[str]) -> List[str]:
-	saved_files = []
-	base = ascii_clean(subject)
+    saved_files = []
+    base = ascii_clean(subject)
 
-	for idx, url in enumerate(urls):
-		unique_id = url.strip().lower()
-		if is_url_downloaded(DB_PATH, unique_id):
-			logging.info(f"[i] Already downloaded: {url}")
-			continue
+    for idx, url in enumerate(urls):
+        unique_id = url.strip().lower()
+        if is_url_downloaded(DB_PATH, unique_id):
+            logging.info(f"[i] Already downloaded: {url}")
+            continue
 
-		sleep_random()
-		suffix = f"_{idx+1}" if len(urls) > 1 else ""
-		fname = f"{base}{suffix}"
+        sleep_random()
+        suffix = f"_{idx+1}" if len(urls) > 1 else ""
+        fname = f"{base}{suffix}"
 
-		if "playlist?list=" in url and "youtube.com" in url:
-			logging.info(f"[i] Handling playlist: {url}")
-			cmd = [
-				"yt-dlp",
-				"--flat-playlist",
-				"--quiet",
-				"--print", "url",
-				"--playlist-end", str(MAX_PLAYLIST_VIDS),
-				url
-			]
-			try:
-				out = subprocess.check_output(cmd, text=True).strip().splitlines()
-			except subprocess.CalledProcessError:
-				logging.error(f"[x] Failed to extract playlist entries: {url}")
-				continue
+        if "playlist?list=" in url and "youtube.com" in url:
+            logging.info(f"[i] Handling playlist: {url}")
+            cmd = [
+                "yt-dlp",
+                "--flat-playlist",
+                "--quiet",
+                "--print", "url",
+                "--playlist-end", str(MAX_PLAYLIST_VIDS),
+                url
+            ]
+            try:
+                out = subprocess.check_output(cmd, text=True).strip().splitlines()
+            except subprocess.CalledProcessError:
+                logging.error(f"[x] Failed to extract playlist entries: {url}")
+                continue
 
-			for i, video_url in enumerate(out):
-				playlist_suffix = f"{suffix}_{i+1}" if suffix else f"_{i+1}"
-				video_fname = f"{base}{playlist_suffix}"
-				if is_url_downloaded(DB_PATH, video_url):
-					continue
-				sleep_random()
-				if _attempt_with_retry(video_url, video_fname):
-					saved_files.append(f"{video_fname}.mp4")
-					mark_url_downloaded(DB_PATH, video_url)
+            for i, video_url in enumerate(out):
+                playlist_suffix = f"{suffix}_{i+1}" if suffix else f"_{i+1}"
+                video_fname = f"{base}{playlist_suffix}"
+                if is_url_downloaded(DB_PATH, video_url):
+                    continue
+                sleep_random()
+                if _attempt_with_retry(video_url, video_fname):
+                    saved_files.append(f"{video_fname}.mp4")
+                    mark_url_downloaded(DB_PATH, video_url)
 
-		else:
-			if _attempt_with_retry(url, fname):
-				saved_files.append(f"{fname}.mp4")
-				mark_url_downloaded(DB_PATH, unique_id)
+        else:
+            if _attempt_with_retry(url, fname):
+                saved_files.append(f"{fname}.mp4")
+                mark_url_downloaded(DB_PATH, unique_id)
 
-	return saved_files
+    return saved_files
 
