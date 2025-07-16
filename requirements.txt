@@ -1,0 +1,11 @@
+whisper
+pytube
+yt-dlp
+pydub
+python-dotenv
+tqdm
+rich
+beautifulsoup4
+lxml
+sqlite-utils
+
