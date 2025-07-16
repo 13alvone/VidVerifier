@@ -63,10 +63,7 @@ Required fields:
 
 ###	Run It
 
-	docker run --rm \
-		-v "$(pwd)/app:/app/app" \
-		--env-file .env \
-		vidverifier
+	docker run --rm -v "$(pwd)/app:/app/app" --env-file .env vidverifier
 
 ###	Run Tests (Locally)
 
