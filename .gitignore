@@ -1,5 +1,20 @@
-app/__pycache__
+# Bytecode cache directories
+__pycache__/
+
+# Compiled Python files
+*.pyc
+
+# Environment variables file
 .env
+
+# SQLite database files
+*.db
 
 # Database file for downloaded links
 app/downloaded_links.db
+
+# Common build artifacts
+build/
+dist/
+*.egg-info/
+.venv/
