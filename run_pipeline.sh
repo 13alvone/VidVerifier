@@ -23,5 +23,6 @@ fi
 
 # Step 3: Run the pipeline
 echo "${LOG_PREFIX} Launching main loop..."
-python3 /app/app/main.py
+export PYTHONPATH=/app
+python3 -m app.main
 
