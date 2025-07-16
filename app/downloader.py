@@ -1,10 +1,25 @@
 #!/usr/bin/env python3
+"""
+Downloader module for VidVerifier with content‑hash dedup.
 
-import os
-import subprocess
+Key properties
+--------------
+• Filenames are unique per URL  ->  <subject>_<urlhash>[_N].mp4
+• After download, SHA‑256(file) is compared to a file_hashes table.
+  Duplicate binaries are deleted; the first copy is kept.
+"""
+
+from __future__ import annotations
+
+import hashlib
 import logging
+import os
+import sqlite3
+import subprocess
 import time
+from pathlib import Path
 from typing import List
+
 from app.utils import ascii_clean, sleep_random, is_url_downloaded, mark_url_downloaded
 
 DB_PATH = os.path.join("app", "downloaded_links.db")
@@ -16,38 +31,89 @@ YT_DLP_BASE = [
     "--restrict-filenames",
     "--no-playlist",
     "--quiet",
-    "--merge-output-format", "mp4",
-    "-f", "bv*+ba/best[ext=mp4]",
-    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36"
+    "--merge-output-format",
+    "mp4",
+    "-f",
+    "bv*+ba/best[ext=mp4]",
+    "--user-agent",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36",
 ]
-
 YT_DLP_FALLBACK = [
     "yt-dlp",
     "--quiet",
-    "--merge-output-format", "mp4",
-    "-f", "best",
-    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36"
+    "--merge-output-format",
+    "mp4",
+    "-f",
+    "best",
+    "--user-agent",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36",
 ]
 
-def _run_download(url: str, filename: str, attempt: int) -> bool:
-    cmd = YT_DLP_BASE.copy()
-    if attempt == 3:
-        cmd = YT_DLP_FALLBACK.copy()
 
-    cmd += ["-o", f"{filename}.mp4", url]
+# ───────────────────────────── DB helpers ─────────────────────────────
+def _ensure_hash_table() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS file_hashes ("
+        "sha256 TEXT PRIMARY KEY, "
+        "file_path TEXT NOT NULL)"
+    )
+    return conn
+
+
+def _register_file(sha: str, path: Path) -> bool:
+    """
+    Return True if this is the **first** time we've seen this hash.
+    If False, caller should treat as duplicate and delete `path`.
+    """
+    conn = _ensure_hash_table()
+    try:
+        with conn:
+            conn.execute("INSERT INTO file_hashes (sha256, file_path) VALUES (?, ?)", (sha, str(path)))
+        return True
+    except sqlite3.IntegrityError:
+        # hash already exists
+        orig = conn.execute("SELECT file_path FROM file_hashes WHERE sha256=?", (sha,)).fetchone()
+        logging.info(f"[i] Duplicate content detected → existing file: {orig[0]}")
+        return False
+    finally:
+        conn.close()
+
+
+# ───────────────────────────── utils  ────────────────────────────────
+def _url_hash(url: str, length: int = 8) -> str:
+    return hashlib.sha256(url.encode(), usedforsecurity=False).hexdigest()[:length]
+
+
+def _safe_filename(subject: str, url: str, suffix: str = "") -> str:
+    base = ascii_clean(subject)
+    return f"{base}_{_url_hash(url)}{suffix}.mp4"
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+# ───────────────────────── download core ─────────────────────────────
+def _run_download(url: str, target: Path, attempt: int) -> bool:
+    cmd = YT_DLP_FALLBACK.copy() if attempt == 3 else YT_DLP_BASE.copy()
+    cmd += ["-o", str(target), url]
     logging.info(f"[i] Attempt {attempt}: {' '.join(cmd)}")
     try:
         subprocess.run(cmd, check=True)
-        logging.info(f"[i] Downloaded: {filename}.mp4")
         return True
-    except subprocess.CalledProcessError as e:
-        logging.warning(f"[!] Attempt {attempt} failed: {e}")
+    except subprocess.CalledProcessError as exc:
+        logging.warning(f"[!] Attempt {attempt} failed: {exc}")
         return False
 
-def _attempt_with_retry(url: str, filename: str) -> bool:
+
+def _attempt_with_retry(url: str, target: Path) -> bool:
     for attempt in range(1, 4):
-        success = _run_download(url, filename, attempt)
-        if success:
+        if _run_download(url, target, attempt):
             return True
         if attempt < 3:
             backoff = 15 * attempt
@@ -55,50 +121,68 @@ def _attempt_with_retry(url: str, filename: str) -> bool:
             time.sleep(backoff)
     return False
 
+
+# ───────────────────────── public API  ───────────────────────────────
 def download_videos(subject: str, urls: List[str]) -> List[str]:
-    saved_files = []
-    base = ascii_clean(subject)
+    saved_files: List[str] = []
 
     for idx, url in enumerate(urls):
-        unique_id = url.strip().lower()
-        if is_url_downloaded(DB_PATH, unique_id):
+        url_id = url.strip().lower()
+        if is_url_downloaded(DB_PATH, url_id):
             logging.info(f"[i] Already downloaded: {url}")
             continue
 
         sleep_random()
-        suffix = f"_{idx+1}" if len(urls) > 1 else ""
-        fname = f"{base}{suffix}"
+        ordinal = f"_{idx+1}" if len(urls) > 1 else ""
+        target = Path(_safe_filename(subject, url, ordinal))
 
+        # playlist handling (unchanged)
         if "playlist?list=" in url and "youtube.com" in url:
-            logging.info(f"[i] Handling playlist: {url}")
-            cmd = [
-                "yt-dlp",
-                "--flat-playlist",
-                "--quiet",
-                "--print", "url",
-                "--playlist-end", str(MAX_PLAYLIST_VIDS),
-                url
-            ]
-            try:
-                out = subprocess.check_output(cmd, text=True).strip().splitlines()
-            except subprocess.CalledProcessError:
-                logging.error(f"[x] Failed to extract playlist entries: {url}")
-                continue
+            _handle_playlist(url, subject, ordinal, saved_files)
+            continue
 
-            for i, video_url in enumerate(out):
-                playlist_suffix = f"{suffix}_{i+1}" if suffix else f"_{i+1}"
-                video_fname = f"{base}{playlist_suffix}"
-                if is_url_downloaded(DB_PATH, video_url):
-                    continue
-                sleep_random()
-                if _attempt_with_retry(video_url, video_fname):
-                    saved_files.append(f"{video_fname}.mp4")
-                    mark_url_downloaded(DB_PATH, video_url)
-
-        else:
-            if _attempt_with_retry(url, fname):
-                saved_files.append(f"{fname}.mp4")
-                mark_url_downloaded(DB_PATH, unique_id)
+        if _attempt_with_retry(url, target):
+            sha = _file_sha256(target)
+            if _register_file(sha, target):
+                saved_files.append(str(target))
+            else:
+                target.unlink(missing_ok=True)  # remove duplicate binary
+            mark_url_downloaded(DB_PATH, url_id)
 
     return saved_files
+
+
+# ───────────────────── playlist support (unchanged) ──────────────────
+def _handle_playlist(url: str, subject: str, suffix: str, saved_files: List[str]):
+    logging.info(f"[i] Handling playlist: {url}")
+    cmd = [
+        "yt-dlp",
+        "--flat-playlist",
+        "--quiet",
+        "--print",
+        "url",
+        "--playlist-end",
+        str(MAX_PLAYLIST_VIDS),
+        url,
+    ]
+    try:
+        entries = subprocess.check_output(cmd, text=True).strip().splitlines()
+    except subprocess.CalledProcessError:
+        logging.error(f"[x] Failed to extract playlist entries: {url}")
+        return
+
+    for i, video_url in enumerate(entries):
+        if is_url_downloaded(DB_PATH, video_url):
+            continue
+        sleep_random()
+        ord_suffix = f"{suffix}_{i+1}" if suffix else f"_{i+1}"
+        target = Path(_safe_filename(subject, video_url, ord_suffix))
+
+        if _attempt_with_retry(video_url, target):
+            sha = _file_sha256(target)
+            if _register_file(sha, target):
+                saved_files.append(str(target))
+            else:
+                target.unlink(missing_ok=True)
+            mark_url_downloaded(DB_PATH, video_url)
 

@@ -1,5 +1,6 @@
 # Bytecode cache directories
 __pycache__/
+app/__pycache__/
 
 # Compiled Python files
 *.pyc
@@ -18,3 +19,5 @@ build/
 dist/
 *.egg-info/
 .venv/
+
+cookies.txt
