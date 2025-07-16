@@ -1,84 +1,115 @@
-#	FactCheck Pipeline
+#	VidVerifier
+	VidVerifier: Fetch, Filter, Fact-Check.
 
-A Dockerized pipeline that:
-	•	Monitors a Gmail inbox for unseen emails containing YouTube, TikTok, or Instagram links
-	•	Downloads videos in best MP4 quality using yt-dlp
-	•	Transcribes audio with OpenAI Whisper if email subject contains "factcheck"
-	•	Ensures deduplication, sender filtering, and robust file naming
-	•	Intelligently supports YouTube playlists (default cap: 20)
 
-##	🧱	Requirements
+VidVerifier is a modern, Dockerized pipeline that monitors your Gmail inbox for video links from YouTube, TikTok, or Instagram, downloads them in the best possible quality, and transcribes them using Whisper AI if flagged for fact-checking. With robust support for playlist URLs, intelligent retries, deduplication, and URL variation coverage, VidVerifier ensures seamless and automated media analysis directly from your inbox.
 
-	•	Gmail address with App Password enabled
-	•	YouTube, TikTok, or Instagram links sent from pre-approved senders
-	•	Docker installed (for deployment)
+##	🎯 Key Features
 
-##	🚀	Quick Start
+	•	Connects securely to Gmail via App Passwords (no OAuth needed)
+	•	Detects all known YouTube, Instagram, and TikTok link formats
+	•	Only processes messages from allowlisted senders
+	•	Downloads videos as MP4 using best quality available
+	•	Supports YouTube playlists with a configurable video limit
+	•	Performs randomized delays + realistic User-Agent for stealth
+	•	Retries failed downloads up to 2 additional times with backoff
+	•	Transcribes videos with Whisper AI if subject contains “factcheck”
+	•	Filenames are ASCII-cleaned from email subject line (+ suffixes if needed)
+	•	SQLite-based deduplication to prevent reprocessing URLs
+	•	Fully Dockerized with CLI test support and clear logging
 
-###	1.	Create a `.env` file
+##	🧠 How It Works
 
-Place in project root:
+When a new email is received from a trusted sender, VidVerifier:
+	1. Extracts all YouTube, TikTok, and Instagram video links
+	2. Cleans subject line → safe filename
+	3. Downloads each video (with retry + fallback logic)
+	4. If "factcheck" is in subject → transcribes each MP4 to TXT
+	5. Saves all files locally + logs metadata in `downloaded_links.db`
 
+##	📂 Example Output
+
+Subject:	Federal Hearing Evidence
+Saved Files:
+	Federal_Hearing_Evidence_1.mp4
+	Federal_Hearing_Evidence_1.txt
+	Federal_Hearing_Evidence_2.mp4
+	Federal_Hearing_Evidence_2.txt
+
+##	⚙️ Setup
+
+###	1. Clone the Repo
+
+	git clone https://github.com/yourname/VidVerifier.git
+	cd VidVerifier
+
+###	2. Create Config File
+
+	cp .env.example .env
+	nano .env
+
+Required fields:
 	GMAIL_ADDRESS=your_email@gmail.com
-	GMAIL_APP_PASSWORD=your_app_password
-	ALLOWED_SENDERS=friend@example.com,alerts@service.com
+	GMAIL_APP_PASSWORD=your_generated_app_password
+	ALLOWED_SENDERS=trusted1@domain.com,alerts@source.com
 	MAX_PLAYLIST_VIDEOS=20
+	WHISPER_MODEL=base
 
-###	2.	Build and Run Docker
+##	🐳 Docker Usage
 
-	docker build -t factcheck-pipeline .
-	docker run -v "$(pwd)/app:/app/app" --env-file .env factcheck-pipeline
+###	Build the Container
 
-###	3.	Run Full Component Test (Optional)
+	docker build -t vidverifier .
+
+###	Run It
+
+	docker run --rm \
+		-v "$(pwd)/app:/app/app" \
+		--env-file .env \
+		vidverifier
+
+###	Run Tests (Locally)
 
 	./test_all.sh
 
-##	📂	Output
+##	🧪 Manual Tests
 
-Videos and transcripts are saved in the `/app/app/` directory inside the container.
-Each video is named after the cleaned email subject line, with incrementing suffixes if needed.
-If the subject contains "factcheck", a `.txt` transcript is created with the same basename.
-
-Example:
-
-	Email Subject:	Breaking News 2025
-	Files Created:
-		Breaking_News_2025_1.mp4
-		Breaking_News_2025_1.txt
-		Breaking_News_2025_2.mp4
-		Breaking_News_2025_2.txt
-
-##	🔒	Security
-
-	•	Only allowed senders are processed
-	•	All URLs are validated via regex against known formats
-	•	Subject and filenames are fully ASCII-cleaned
-	•	Each URL/video is stored in SQLite and will never be reprocessed
-
-##	⚙️	Configuration Options
-
-Env Var				Description						Default
-MAX_PLAYLIST_VIDEOS	Maximum videos to pull from a playlist		20
-WHISPER_MODEL		Whisper model to use (base/medium/large)	base
-
-##	🧪	Manual Component Testing
-
-Run individual component tests:
+Run individual test components:
 
 	python3 app/test_pipeline.py --gmail
 	python3 app/test_pipeline.py --regex
-	python3 app/test_pipeline.py --download "https://youtu.be/dQw4w9WgXcQ"
-	python3 app/test_pipeline.py --transcribe downloaded_file.mp4
+	python3 app/test_pipeline.py --download https://youtu.be/dQw4w9WgXcQ
+	python3 app/test_pipeline.py --transcribe ./test_subject_1.mp4
 
-##	📌	Tips
+##	📦 Directory Layout
 
-	•	Use Gmail's "App Passwords" (in Account > Security) — not your main password
-	•	To download age-restricted/private videos, mount a cookies.txt and update yt-dlp call if needed
-	•	Playlists are supported up to `MAX_PLAYLIST_VIDEOS`; each entry is deduped individually
-	•	Random sleep between downloads (10–30s) avoids bot detection
+	app/
+		downloader.py			# Download engine with retry + backoff
+		gmail_watcher.py		# Gmail IMAP connector and URL extractor
+		transcriber.py			# Whisper-based transcription logic
+		utils.py				# Regex, delay, sanitizer, dedup DB
+		main.py					# Orchestration
+		test_pipeline.py		# CLI test harness
+		downloaded_links.db		# SQLite DB for deduplication
 
-##	✅	That's It!
+##	🔐 Security Notes
 
-FactCheck Pipeline will intelligently process video content from your inbox and turn it into verified audio+text packages, ready for downstream use.
+	•	Only processes URLs from allowlisted senders
+	•	All subject lines and URLs are ASCII-cleaned
+	•	No OAuth/OIDC flows — app password is recommended
+	•	Whisper model is run locally — no outbound API calls
+
+##	📌 Tips
+
+	•	Run as a cron job to check your inbox every 15 mins
+	•	Configure playlists max count with `MAX_PLAYLIST_VIDEOS`
+	•	Add your own cookie.txt to support private/age-restricted videos
+	•	Use `WHISPER_MODEL=medium` for more accurate transcripts (if supported)
+
+##	🧼 Maintenance
+
+Clean up old Docker images:
+
+	docker image prune -f
 
 
