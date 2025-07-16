@@ -53,7 +53,8 @@ Required fields:
 	GMAIL_APP_PASSWORD=your_generated_app_password
 	ALLOWED_SENDERS=trusted1@domain.com,alerts@source.com
 	MAX_PLAYLIST_VIDEOS=20
-	WHISPER_MODEL=base
+        WHISPER_MODEL=base
+        LOG_LEVEL=INFO
 
 ##	🐳 Docker Usage
 
