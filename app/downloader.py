@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Downloader module for VidVerifier with content‑hash dedup.
+Downloader module for VidVerifier with robust dedup.
 
-Key properties
---------------
-• Filenames are unique per URL  ->  <subject>_<urlhash>[_N].mp4
-• After download, SHA‑256(file) is compared to a file_hashes table.
-  Duplicate binaries are deleted; the first copy is kept.
+• Filenames: <ascii_subject>_<urlhash>[_N].mp4  (URL‑level uniqueness)
+• After download, SHA‑256(file) is checked:
+      - first time → keep + register hash
+      - duplicate  → delete new file, keep first copy
+• If yt‑dlp exits 0 but produces no file, we treat it as a failed attempt
+  and retry / skip without crashing.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from app.utils import ascii_clean, sleep_random, is_url_downloaded, mark_url_dow
 DB_PATH = os.path.join("app", "downloaded_links.db")
 MAX_PLAYLIST_VIDS = int(os.getenv("MAX_PLAYLIST_VIDEOS", 20))
 
+# yt‑dlp command templates
 YT_DLP_BASE = [
     "yt-dlp",
     "--no-warnings",
@@ -49,8 +51,7 @@ YT_DLP_FALLBACK = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36",
 ]
 
-
-# ───────────────────────────── DB helpers ─────────────────────────────
+# ─────────────────────────── DB helpers ────────────────────────────
 def _ensure_hash_table() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
@@ -63,8 +64,7 @@ def _ensure_hash_table() -> sqlite3.Connection:
 
 def _register_file(sha: str, path: Path) -> bool:
     """
-    Return True if this is the **first** time we've seen this hash.
-    If False, caller should treat as duplicate and delete `path`.
+    Insert (sha, path).  Return True if new; False if already present.
     """
     conn = _ensure_hash_table()
     try:
@@ -72,15 +72,15 @@ def _register_file(sha: str, path: Path) -> bool:
             conn.execute("INSERT INTO file_hashes (sha256, file_path) VALUES (?, ?)", (sha, str(path)))
         return True
     except sqlite3.IntegrityError:
-        # hash already exists
-        orig = conn.execute("SELECT file_path FROM file_hashes WHERE sha256=?", (sha,)).fetchone()
+        orig = conn.execute(
+            "SELECT file_path FROM file_hashes WHERE sha256=?", (sha,)
+        ).fetchone()
         logging.info(f"[i] Duplicate content detected → existing file: {orig[0]}")
         return False
     finally:
         conn.close()
 
-
-# ───────────────────────────── utils  ────────────────────────────────
+# ─────────────────────────── misc helpers ─────────────────────────
 def _url_hash(url: str, length: int = 8) -> str:
     return hashlib.sha256(url.encode(), usedforsecurity=False).hexdigest()[:length]
 
@@ -97,18 +97,24 @@ def _file_sha256(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-
-# ───────────────────────── download core ─────────────────────────────
+# ───────────────── download with verification ─────────────────────
 def _run_download(url: str, target: Path, attempt: int) -> bool:
     cmd = YT_DLP_FALLBACK.copy() if attempt == 3 else YT_DLP_BASE.copy()
     cmd += ["-o", str(target), url]
     logging.info(f"[i] Attempt {attempt}: {' '.join(cmd)}")
+
     try:
         subprocess.run(cmd, check=True)
-        return True
     except subprocess.CalledProcessError as exc:
-        logging.warning(f"[!] Attempt {attempt} failed: {exc}")
+        logging.warning(f"[!] Attempt {attempt} failed (yt‑dlp error): {exc}")
         return False
+
+    if target.exists():
+        logging.info(f"[i] Downloaded: {target.name}")
+        return True
+
+    logging.warning(f"[!] Attempt {attempt} produced no file (url='{url}')")
+    return False
 
 
 def _attempt_with_retry(url: str, target: Path) -> bool:
@@ -117,28 +123,27 @@ def _attempt_with_retry(url: str, target: Path) -> bool:
             return True
         if attempt < 3:
             backoff = 15 * attempt
-            logging.info(f"[!] Backing off for {backoff}s before retrying...")
+            logging.info(f"[!] Backing off for {backoff}s before retrying…")
             time.sleep(backoff)
     return False
 
-
-# ───────────────────────── public API  ───────────────────────────────
+# ───────────────────────── public API ─────────────────────────────
 def download_videos(subject: str, urls: List[str]) -> List[str]:
     saved_files: List[str] = []
 
     for idx, url in enumerate(urls):
-        url_id = url.strip().lower()
-        if is_url_downloaded(DB_PATH, url_id):
+        uid = url.strip().lower()
+        if is_url_downloaded(DB_PATH, uid):
             logging.info(f"[i] Already downloaded: {url}")
             continue
 
         sleep_random()
-        ordinal = f"_{idx+1}" if len(urls) > 1 else ""
-        target = Path(_safe_filename(subject, url, ordinal))
+        ord_suffix = f"_{idx+1}" if len(urls) > 1 else ""
+        target = Path(_safe_filename(subject, url, ord_suffix))
 
-        # playlist handling (unchanged)
+        # playlist handling
         if "playlist?list=" in url and "youtube.com" in url:
-            _handle_playlist(url, subject, ordinal, saved_files)
+            _handle_playlist(url, subject, ord_suffix, saved_files)
             continue
 
         if _attempt_with_retry(url, target):
@@ -146,13 +151,12 @@ def download_videos(subject: str, urls: List[str]) -> List[str]:
             if _register_file(sha, target):
                 saved_files.append(str(target))
             else:
-                target.unlink(missing_ok=True)  # remove duplicate binary
-            mark_url_downloaded(DB_PATH, url_id)
+                target.unlink(missing_ok=True)  # remove dup content
+            mark_url_downloaded(DB_PATH, uid)
 
     return saved_files
 
-
-# ───────────────────── playlist support (unchanged) ──────────────────
+# ───────────────────── playlist support (unchanged) ───────────────
 def _handle_playlist(url: str, subject: str, suffix: str, saved_files: List[str]):
     logging.info(f"[i] Handling playlist: {url}")
     cmd = [
@@ -175,8 +179,8 @@ def _handle_playlist(url: str, subject: str, suffix: str, saved_files: List[str]
         if is_url_downloaded(DB_PATH, video_url):
             continue
         sleep_random()
-        ord_suffix = f"{suffix}_{i+1}" if suffix else f"_{i+1}"
-        target = Path(_safe_filename(subject, video_url, ord_suffix))
+        psuffix = f"{suffix}_{i+1}" if suffix else f"_{i+1}"
+        target = Path(_safe_filename(subject, video_url, psuffix))
 
         if _attempt_with_retry(video_url, target):
             sha = _file_sha256(target)
