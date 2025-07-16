@@ -1,2 +1,5 @@
 app/__pycache__
 .env
+
+# Database file for downloaded links
+app/downloaded_links.db
