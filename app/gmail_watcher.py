@@ -50,16 +50,16 @@ def fetch_matching_emails(mail, allowed_senders: List[str]) -> List[Tuple[str, L
 
                 factcheck = "factcheck" in subject.lower()
 
-		# Extract body
-		body = ""
-		if msg.is_multipart():
-			for part in msg.walk():
-				content_type = part.get_content_type()
-				if content_type == "text/plain":
-					body = part.get_payload(decode=True).decode(errors="ignore")
-					break
-		else:
-			body = msg.get_payload(decode=True).decode(errors="ignore")
+        # Extract body
+        body = ""
+        if msg.is_multipart():
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                if content_type == "text/plain":
+                    body = part.get_payload(decode=True).decode(errors="ignore")
+                    break
+        else:
+            body = msg.get_payload(decode=True).decode(errors="ignore")
 
                 urls = extract_urls(body)
                 if urls:
