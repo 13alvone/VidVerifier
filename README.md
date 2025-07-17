@@ -59,6 +59,7 @@ It watches your Gmail, finds **YouTube / TikTok / Instagram** links, dow
 ---
 
 ## 🎯 Why you’ll like it
+
 * Gmail **App Password**—no OAuth fuss  
 * Handles every common YT / IG / TikTok link style  
 * Random delays + desktop **User‑Agent** ⇒ stealthier  
