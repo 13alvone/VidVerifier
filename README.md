@@ -1,11 +1,17 @@
-#	Presenting
+#	Vid Verifier
 ```
- _   ___    ___   __        _ ____        
-| | / (_)__/ / | / /__ ____(_) _(_)__ ____
-| |/ / / _  /| |/ / -_) __/ / _/ / -_) __/
-|___/_/\_,_/ |___/\__/_/ /_/_//_/\__/_/   
+ _____    _       _         _____ _ _ _             
+|  ___|__| |_ ___| |__     |  ___(_) | |_ ___ _ __  
+| |_ / _ \ __/ __| '_ \    | |_  | | | __/ _ \ '__| 
+|  _|  __/ || (__| | | |_  |  _| | | | ||  __/ |_   
+|_|  \___|\__\___|_| |_( ) |_|   |_|_|\__\___|_( )  
+ _____          _      |/ ____ _               |/   
+|  ___|_ _  ___| |_      / ___| |__   ___  ___| | __
+| |_ / _` |/ __| __|____| |   | '_ \ / _ \/ __| |/ /
+|  _| (_| | (__| ||_____| |___| | | |  __/ (__|   < 
+|_|  \__,_|\___|\__|     \____|_| |_|\___|\___|_|\_\
 ```
-	VidVerifier: Fetch, Filter, Fact-Check.
+	
 
 
 VidVerifier is a modern, Dockerized pipeline that monitors your Gmail inbox for video links from YouTube, TikTok, or Instagram, downloads them in the best possible quality, and transcribes them using Whisper AI if flagged for fact-checking. With robust support for playlist URLs, intelligent retries, deduplication, and URL variation coverage, VidVerifier ensures seamless and automated media analysis directly from your inbox.
