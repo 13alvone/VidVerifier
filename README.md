@@ -1,4 +1,4 @@
-# Vid Verifier
+# Vid Verifier
 
 	_____    _       _         _____ _ _ _             
 	|  ___|__| |_ ___| |__     |  ___(_) | |_ ___ _ __  
@@ -12,28 +12,28 @@
 	|_|  \__,_|\___|\__|     \____|_| |_|\___|\___|_|\_\
 
 
-## What is Vid Verifier?  
+## What is Vid Verifier?  
 *An inbox robot for videos.*   
 It watches your Gmail, finds **YouTube / TikTok / Instagram** links, downloads the videos in the best quality and—when the subject line contains **factcheck**—creates Whisper transcripts. Everything runs in one Docker image—no Python installs, no system dependencies.
 
 ---
 
-## 🚀 5‑Minute Install (Really)
+## 🚀 5‑Minute Install (Really)
 
 > **TL;DR** Copy‑paste each block; edit **one** file; done.
 
-### 1 ▪ Grab the code
+### 1 ▪ Grab the code
 	cd ~
 	git clone https://github.com/yourname/VidVerifier.git
 	cd VidVerifier
 
-### 2 ▪ Create a Google *App Password*
+### 2 ▪ Create a Google *App Password*
 	# 1) Enable 2‑Step Verification → https://myaccount.google.com/security
 	# 2) Open  https://myaccount.google.com/apppasswords
 	#    Select app → Other → VidVerifier → Generate
 	# 3) Copy the 16‑digit string
 
-### 3 ▪ Fill in `.env`
+### 3 ▪ Fill in `.env`
 	cp .env.example .env
 	nano .env    # or any editor
 	# ───────────────────────────────────
@@ -45,7 +45,7 @@ It watches your Gmail, finds **YouTube / TikTok / Instagram** links, dow
 	LOG_LEVEL           = INFO
 	# ───────────────────────────────────
 
-### 4 ▪ Build and run
+### 4 ▪ Build and run
 	docker build -t vidverifier .
 	docker run -d --name vidverifier --restart unless-stopped \
 	  -v "$(pwd)/output":/downloads \
@@ -58,7 +58,7 @@ It watches your Gmail, finds **YouTube / TikTok / Instagram** links, dow
 
 ---
 
-## 🎯 Why you’ll like it
+## 🎯 Why you’ll like it
 * Gmail **App Password**—no OAuth fuss  
 * Handles every common YT / IG / TikTok link style  
 * Random delays + desktop **User‑Agent** ⇒ stealthier  
@@ -69,7 +69,7 @@ It watches your Gmail, finds **YouTube / TikTok / Instagram** links, dow
 
 ---
 
-## 🧠 How it works (internally)
+## 🧠 How it works (internally)
 
 	graph TD
 	  A(Gmail IMAP) -->|unseen mails| B{Allowed sender?}
@@ -84,13 +84,13 @@ It watches your Gmail, finds **YouTube / TikTok / Instagram** links, dow
 
 ---
 
-## 📂 What lands in **output/**  
+## 📂 What lands in **output/**  
 	Federal_Hearing_Evidence_bb92f1c3.mp4
 	Federal_Hearing_Evidence_bb92f1c3.txt  # when transcribed
 
 ---
 
-## 💡 Handy commands
+## 💡 Handy commands
 | Task | Command |
 | --- | --- |
 | Test suite |	./test_all.sh |
@@ -100,7 +100,7 @@ It watches your Gmail, finds **YouTube / TikTok / Instagram** links, dow
 
 ---
 
-## 🔐 Security
+## 🔐 Security
 * Only allow‑listed senders are processed.  
 * Filenames fully sanitised.  
 * Whisper runs **locally**—no cloud calls.
