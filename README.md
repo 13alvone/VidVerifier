@@ -1,125 +1,111 @@
-#	Vid Verifier
-```
- _____    _       _         _____ _ _ _             
-|  ___|__| |_ ___| |__     |  ___(_) | |_ ___ _ __  
-| |_ / _ \ __/ __| '_ \    | |_  | | | __/ _ \ '__| 
-|  _|  __/ || (__| | | |_  |  _| | | | ||  __/ |_   
-|_|  \___|\__\___|_| |_( ) |_|   |_|_|\__\___|_( )  
- _____          _      |/ ____ _               |/   
-|  ___|_ _  ___| |_      / ___| |__   ___  ___| | __
-| |_ / _` |/ __| __|____| |   | '_ \ / _ \/ __| |/ /
-|  _| (_| | (__| ||_____| |___| | | |  __/ (__|   < 
-|_|  \__,_|\___|\__|     \____|_| |_|\___|\___|_|\_\
-```
-	
+# Vid Verifier
+
+	_____    _       _         _____ _ _ _             
+	|  ___|__| |_ ___| |__     |  ___(_) | |_ ___ _ __  
+	| |_ / _ \ __/ __| '_ \    | |_  | | | __/ _ \ '__| 
+	|  _|  __/ || (__| | | |_  |  _| | | | ||  __/ |_   
+	|_|  \___|\__\___|_| |_( ) |_|   |_|_|\__\___|_( )  
+	 _____          _      |/ ____ _               |/   
+	|  ___|_ _  ___| |_      / ___| |__   ___  ___| | __
+	| |_ / _` |/ __| __|____| |   | '_ \ / _ \/ __| |/ /
+	|  _| (_| | (__| ||_____| |___| | | |  __/ (__|   < 
+	|_|  \__,_|\___|\__|     \____|_| |_|\___|\___|_|\_\
 
 
-VidVerifier is a modern, Dockerized pipeline that monitors your Gmail inbox for video links from YouTube, TikTok, or Instagram, downloads them in the best possible quality, and transcribes them using Whisper AI if flagged for fact-checking. With robust support for playlist URLs, intelligent retries, deduplication, and URL variation coverage, VidVerifier ensures seamless and automated media analysis directly from your inbox.
+## What is Vid Verifier?  
+*An inbox robot for videos.*   
+It watches your Gmail, finds **YouTube / TikTok / Instagram** links, downloads the videos in the best quality and—when the subject line contains **factcheck**—creates Whisper transcripts. Everything runs in one Docker image—no Python installs, no system dependencies.
 
-##	🎯 Key Features
+---
 
-	•	Connects securely to Gmail via App Passwords (no OAuth needed)
-	•	Detects all known YouTube, Instagram, and TikTok link formats
-	•	Only processes messages from allowlisted senders
-	•	Downloads videos as MP4 using best quality available
-	•	Supports YouTube playlists with a configurable video limit
-	•	Performs randomized delays + realistic User-Agent for stealth
-	•	Retries failed downloads up to 2 additional times with backoff
-	•	Transcribes videos with Whisper AI if subject contains “factcheck”
-	•	Filenames are ASCII-cleaned from email subject line (+ suffixes if needed)
-	•	SQLite-based deduplication to prevent reprocessing URLs
-	•	Fully Dockerized with CLI test support and clear logging
+## 🚀 5‑Minute Install (Really)
 
-##	🧠 How It Works
+> **TL;DR** Copy‑paste each block; edit **one** file; done.
 
-When a new email is received from a trusted sender, VidVerifier:
-	1. Extracts all YouTube, TikTok, and Instagram video links
-	2. Cleans subject line → safe filename
-	3. Downloads each video (with retry + fallback logic)
-	4. If "factcheck" is in subject → transcribes each MP4 to TXT
-	5. Saves all files locally + logs metadata in `downloaded_links.db`
-
-##	📂 Example Output
-
-Subject:	Federal Hearing Evidence
-Saved Files:
-	Federal_Hearing_Evidence_1.mp4
-	Federal_Hearing_Evidence_1.txt
-	Federal_Hearing_Evidence_2.mp4
-	Federal_Hearing_Evidence_2.txt
-
-##	⚙️ Setup
-
-###	1. Clone the Repo
-
+### 1 ▪ Grab the code
+	cd ~
 	git clone https://github.com/yourname/VidVerifier.git
 	cd VidVerifier
 
-###	2. Create Config File
+### 2 ▪ Create a Google *App Password*
+	# 1) Enable 2‑Step Verification → https://myaccount.google.com/security
+	# 2) Open  https://myaccount.google.com/apppasswords
+	#    Select app → Other → VidVerifier → Generate
+	# 3) Copy the 16‑digit string
 
+### 3 ▪ Fill in `.env`
 	cp .env.example .env
-	nano .env
+	nano .env    # or any editor
+	# ───────────────────────────────────
+	GMAIL_ADDRESS       = you@gmail.com
+	GMAIL_APP_PASSWORD  = 16‑digit‑string‑here
+	ALLOWED_SENDERS     = you@gmail.com, alerts@example.com
+	MAX_PLAYLIST_VIDEOS = 20
+	WHISPER_MODEL       = base
+	LOG_LEVEL           = INFO
+	# ───────────────────────────────────
 
-Required fields:
-	GMAIL_ADDRESS=your_email@gmail.com
-	GMAIL_APP_PASSWORD=your_generated_app_password
-	ALLOWED_SENDERS=trusted1@domain.com,alerts@source.com
-	MAX_PLAYLIST_VIDEOS=20
-        WHISPER_MODEL=base
-        LOG_LEVEL=INFO
-
-##	🐳 Docker Usage
-
-###	Build the Container
-
+### 4 ▪ Build and run
 	docker build -t vidverifier .
+	docker run -d --name vidverifier --restart unless-stopped \
+	  -v "$(pwd)/output":/downloads \
+	  --env-file .env \
+	  -e GMAIL_SEARCH=ALL \
+	  vidverifier
 
-###	Run It
+	Logs  →  docker logs -f vidverifier  
+	Stop  →  docker stop vidverifier
 
-	docker run --rm -v "$(pwd)/app:/app/app" --env-file .env vidverifier
+---
 
-###	Run Tests (Locally)
+## 🎯 Why you’ll like it
+* Gmail **App Password**—no OAuth fuss  
+* Handles every common YT / IG / TikTok link style  
+* Random delays + desktop **User‑Agent** ⇒ stealthier  
+* 3 auto‑retries with exponential back‑off  
+* ASCII‑safe filenames, playlist support, SHA‑256 deduplication  
+* On‑demand Whisper transcription  
+* One self‑contained image (FFmpeg + yt‑dlp + Whisper)
 
-	./test_all.sh
+---
 
-##	🧪 Manual Tests
+## 🧠 How it works (internally)
 
-Run individual test components:
+	graph TD
+	  A(Gmail IMAP) -->|unseen mails| B{Allowed sender?}
+	  B -->|no| Z[Skip]
+	  B -->|yes| C[Extract links]
+	  C --> D[Download MP4(s)]
+	  D --> E{subject contains “factcheck”?}
+	  E -->|yes| F[Whisper transcribe → TXT]
+	  E -->|no| G[Done]
+	  F --> G
+	  G --> H[Log to SQLite & keep file]
 
-	python3 app/test_pipeline.py --gmail
-	python3 app/test_pipeline.py --regex
-	python3 app/test_pipeline.py --download https://youtu.be/dQw4w9WgXcQ
-	python3 app/test_pipeline.py --transcribe ./test_subject_1.mp4
+---
 
-##	📦 Directory Layout
+## 📂 What lands in **output/**  
+	Federal_Hearing_Evidence_bb92f1c3.mp4
+	Federal_Hearing_Evidence_bb92f1c3.txt  # when transcribed
 
-	app/
-		downloader.py			# Download engine with retry + backoff
-		gmail_watcher.py		# Gmail IMAP connector and URL extractor
-		transcriber.py			# Whisper-based transcription logic
-		utils.py				# Regex, delay, sanitizer, dedup DB
-		main.py					# Orchestration
-		test_pipeline.py		# CLI test harness
-		downloaded_links.db		# SQLite DB for deduplication
+---
 
-##	🔐 Security Notes
+## 💡 Handy commands
+| Task | Command |
+| --- | --- |
+| Test suite |	./test_all.sh |
+| Follow logs |	docker logs -f vidverifier |
+| Update image |	git pull && docker build -t vidverifier . |
+| Prune images |	docker image prune -f |
 
-	•	Only processes URLs from allowlisted senders
-	•	All subject lines and URLs are ASCII-cleaned
-	•	No OAuth/OIDC flows — app password is recommended
-	•	Whisper model is run locally — no outbound API calls
+---
 
-##	📌 Tips
+## 🔐 Security
+* Only allow‑listed senders are processed.  
+* Filenames fully sanitised.  
+* Whisper runs **locally**—no cloud calls.
 
-	•	Run as a cron job to check your inbox every 15 mins
-	•	Configure playlists max count with `MAX_PLAYLIST_VIDEOS`
-	•	Add your own cookie.txt to support private/age-restricted videos
-	•	Use `WHISPER_MODEL=medium` for more accurate transcripts (if supported)
+---
 
-##	🧼 Maintenance
-
-Clean up old Docker images:
-
-	docker image prune -f
-
-
+## Need help?  
+Open an issue—bug reports, ideas and PRs are welcome!
