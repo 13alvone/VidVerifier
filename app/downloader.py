@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-Downloader module for VidVerifier with robust dedup.
+Downloader module for VidVerifier.
 
-• Filenames: <ascii_subject>_<urlhash>[_N].mp4  (URL‑level uniqueness)
-• After download, SHA‑256(file) is checked:
-      - first time → keep + register hash
-      - duplicate  → delete new file, keep first copy
-• If yt‑dlp exits 0 but produces no file, we treat it as a failed attempt
-  and retry / skip without crashing.
+Key points
+──────────
+• Unique filenames: <ascii_subject>_<urlhash>[optional_idx].mp4
+  are written inside DOWNLOAD_DIR (defaults to /downloads).
+
+• After download, SHA‑256 is checked:
+      – new hash → file kept, hash stored
+      – existing  → new file deleted, log notice
+
+• If yt‑dlp exits 0 but produces no file, we retry / skip safely.
 """
 
 from __future__ import annotations
@@ -21,12 +25,18 @@ import time
 from pathlib import Path
 from typing import List
 
-from app.utils import ascii_clean, sleep_random, is_url_downloaded, mark_url_downloaded
+from app.utils import (
+    ascii_clean,
+    is_url_downloaded,
+    mark_url_downloaded,
+    sleep_random,
+)
 
 DB_PATH = os.path.join("app", "downloaded_links.db")
 MAX_PLAYLIST_VIDS = int(os.getenv("MAX_PLAYLIST_VIDEOS", 20))
+DOWNLOAD_DIR = Path(os.getenv("DOWNLOAD_DIR", "/downloads"))
 
-# yt‑dlp command templates
+# yt‑dlp command templates -------------------------------------------------
 YT_DLP_BASE = [
     "yt-dlp",
     "--no-warnings",
@@ -38,8 +48,10 @@ YT_DLP_BASE = [
     "-f",
     "bv*+ba/best[ext=mp4]",
     "--user-agent",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "Chrome/114.0.0.0 Safari/537.36",
 ]
+
 YT_DLP_FALLBACK = [
     "yt-dlp",
     "--quiet",
@@ -48,7 +60,8 @@ YT_DLP_FALLBACK = [
     "-f",
     "best",
     "--user-agent",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "Chrome/114.0.0.0 Safari/537.36",
 ]
 
 # ─────────────────────────── DB helpers ────────────────────────────
@@ -69,7 +82,10 @@ def _register_file(sha: str, path: Path) -> bool:
     conn = _ensure_hash_table()
     try:
         with conn:
-            conn.execute("INSERT INTO file_hashes (sha256, file_path) VALUES (?, ?)", (sha, str(path)))
+            conn.execute(
+                "INSERT INTO file_hashes (sha256, file_path) VALUES (?, ?)",
+                (sha, str(path)),
+            )
         return True
     except sqlite3.IntegrityError:
         orig = conn.execute(
@@ -85,9 +101,13 @@ def _url_hash(url: str, length: int = 8) -> str:
     return hashlib.sha256(url.encode(), usedforsecurity=False).hexdigest()[:length]
 
 
-def _safe_filename(subject: str, url: str, suffix: str = "") -> str:
+def _safe_filename(subject: str, url: str, suffix: str = "") -> Path:
+    """
+    Build an *absolute* path in DOWNLOAD_DIR with a unique, ascii‑safe name.
+    """
     base = ascii_clean(subject)
-    return f"{base}_{_url_hash(url)}{suffix}.mp4"
+    fname = f"{base}_{_url_hash(url)}{suffix}.mp4"
+    return DOWNLOAD_DIR / fname
 
 
 def _file_sha256(path: Path) -> str:
@@ -97,7 +117,7 @@ def _file_sha256(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-# ───────────────── download with verification ─────────────────────
+# ─────────────── download w/ verification & retries ───────────────
 def _run_download(url: str, target: Path, attempt: int) -> bool:
     cmd = YT_DLP_FALLBACK.copy() if attempt == 3 else YT_DLP_BASE.copy()
     cmd += ["-o", str(target), url]
@@ -130,6 +150,7 @@ def _attempt_with_retry(url: str, target: Path) -> bool:
 # ───────────────────────── public API ─────────────────────────────
 def download_videos(subject: str, urls: List[str]) -> List[str]:
     saved_files: List[str] = []
+    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     for idx, url in enumerate(urls):
         uid = url.strip().lower()
@@ -139,9 +160,8 @@ def download_videos(subject: str, urls: List[str]) -> List[str]:
 
         sleep_random()
         ord_suffix = f"_{idx+1}" if len(urls) > 1 else ""
-        target = Path(_safe_filename(subject, url, ord_suffix))
+        target = _safe_filename(subject, url, ord_suffix)
 
-        # playlist handling
         if "playlist?list=" in url and "youtube.com" in url:
             _handle_playlist(url, subject, ord_suffix, saved_files)
             continue
@@ -151,7 +171,7 @@ def download_videos(subject: str, urls: List[str]) -> List[str]:
             if _register_file(sha, target):
                 saved_files.append(str(target))
             else:
-                target.unlink(missing_ok=True)  # remove dup content
+                target.unlink(missing_ok=True)
             mark_url_downloaded(DB_PATH, uid)
 
     return saved_files
@@ -180,7 +200,7 @@ def _handle_playlist(url: str, subject: str, suffix: str, saved_files: List[str]
             continue
         sleep_random()
         psuffix = f"{suffix}_{i+1}" if suffix else f"_{i+1}"
-        target = Path(_safe_filename(subject, video_url, psuffix))
+        target = _safe_filename(subject, video_url, psuffix)
 
         if _attempt_with_retry(video_url, target):
             sha = _file_sha256(target)
