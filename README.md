@@ -108,5 +108,5 @@ It watches your Gmail, finds **YouTube / TikTok / Instagram** links, dow
 
 ---
 
-## Need help?  
+## Need help?  
 Open an issue—bug reports, ideas and PRs are welcome!
