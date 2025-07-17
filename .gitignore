@@ -21,3 +21,5 @@ dist/
 .venv/
 
 cookies.txt
+tmux_launch.log
+output/
